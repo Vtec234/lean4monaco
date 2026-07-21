@@ -4,6 +4,7 @@ import {
   Disposable,
   Emitter,
   MessageReader,
+  NotificationMessage,
   PartialMessageInfo,
 } from 'vscode-jsonrpc'
 import {
@@ -18,6 +19,9 @@ export type DualWebSocketTransport = {
   transports: MessageTransports
   close: () => void
 }
+
+const SET_SERVER_MESSAGE_PRIORITIZATION_METHOD =
+  '$/lean4web/setServerMessagePrioritization'
 
 const addChannelParameters = (
   baseUrl: string,
@@ -130,6 +134,7 @@ class MergedMessageReader implements MessageReader {
  */
 export const createDualWebSocketTransport = async (
   baseUrl: string,
+  prioritizeServerMessages = true,
   onClose?: () => void,
 ): Promise<DualWebSocketTransport> => {
   const session = createSessionId()
@@ -192,6 +197,17 @@ export const createDualWebSocketTransport = async (
     close,
   )
   const writer = new WebSocketMessageWriter(loRpcSocket)
+  const configurationMessage: NotificationMessage = {
+    jsonrpc: '2.0',
+    method: SET_SERVER_MESSAGE_PRIORITIZATION_METHOD,
+    params: { enabled: prioritizeServerMessages },
+  }
+  try {
+    await writer.write(configurationMessage)
+  } catch (error) {
+    close()
+    throw error
+  }
 
   return {
     transports: { reader, writer },

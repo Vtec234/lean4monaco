@@ -1,13 +1,14 @@
-import { LanguageClientWrapper, WorkerConfigDirect, WebSocketConfigOptions, WebSocketConfigOptionsUrl, WorkerConfigOptions } from 'monaco-editor-wrapper'
+import { LanguageClientWrapper, WorkerConfigDirect, WebSocketConfigOptions, WorkerConfigOptions } from 'monaco-editor-wrapper'
 import { MonacoLanguageClient } from 'monaco-languageclient'
 import { LanguageClientOptions } from 'vscode-languageclient/node'
 import { Message } from 'vscode-jsonrpc'
 import { displayNotification } from './vscode-lean4/vscode-lean4/src/utils/notifs'
 import merge from 'lodash/merge'
 import { createDualWebSocketTransport } from './dualWebSocketTransport'
+import type { LeanWebSocketConfigOptionsUrl } from './leanmonaco'
 
 export const setupMonacoClient = (
-  options: WebSocketConfigOptions | WebSocketConfigOptionsUrl | WorkerConfigOptions | WorkerConfigDirect,
+  options: WebSocketConfigOptions | LeanWebSocketConfigOptionsUrl | WorkerConfigOptions | WorkerConfigDirect,
   moreClientOptions?: LanguageClientOptions
 ) => {
   return async (clientOptions: LanguageClientOptions) => {
@@ -32,11 +33,15 @@ export const setupMonacoClient = (
       let transportClosed = false
       const connectionProvider = {
         get: async () => {
-          const transport = await createDualWebSocketTransport(options.url, () => {
-            if (transportClosed) return
-            transportClosed = true
-            options.stopOptions?.onCall(client)
-          })
+          const transport = await createDualWebSocketTransport(
+            options.url,
+            options.prioritizeServerMessages ?? true,
+            () => {
+              if (transportClosed) return
+              transportClosed = true
+              options.stopOptions?.onCall(client)
+            },
+          )
           return transport.transports
         }
       }

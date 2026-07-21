@@ -33,6 +33,8 @@ import type { LanguageClientOptions } from 'vscode-languageclient/node'
 export type LeanMonacoOptions = {
   websocket: {
     url: string
+    /** Ask lean4web to route interactive server messages over the high-priority channel. */
+    prioritizeServerMessages?: boolean
   }
   htmlElement?: HTMLElement
   vscode?: {
@@ -287,7 +289,9 @@ export type LeanMonacoOptions = {
     }
   }
 
-  protected getWebSocketOptions(options: LeanMonacoOptions): WebSocketConfigOptionsUrl {
+  protected getWebSocketOptions(
+    options: LeanMonacoOptions,
+  ): LeanWebSocketConfigOptionsUrl {
     return {
       $type: 'WebSocketUrl',
       startOptions: {
@@ -332,6 +336,10 @@ export type LeanMonacoOptions = {
     this.abbreviationFeature?.dispose()
     this.abbreviationFeature = undefined
   }
+}
+
+export type LeanWebSocketConfigOptionsUrl = WebSocketConfigOptionsUrl & {
+  prioritizeServerMessages?: boolean
 }
 
 /** Returns true if the browser wants dark mode */
