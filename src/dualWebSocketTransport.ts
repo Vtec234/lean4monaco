@@ -3,7 +3,9 @@ import {
   DataCallback,
   Disposable,
   Emitter,
+  Message,
   MessageReader,
+  MessageWriter,
   NotificationMessage,
   PartialMessageInfo,
 } from 'vscode-jsonrpc'
@@ -22,6 +24,9 @@ export type DualWebSocketTransport = {
 
 const SET_SERVER_MESSAGE_PRIORITIZATION_METHOD =
   '$/lean4web/setServerMessagePrioritization'
+
+/** Methods that must reach the server even when the `lo` channel is backed up. */
+const BROADCAST_METHODS = new Set(['$/lean/rpc/keepAlive'])
 
 const addChannelParameters = (
   baseUrl: string,
@@ -127,10 +132,47 @@ class MergedMessageReader implements MessageReader {
 }
 
 /**
+ * Writes messages to the `lo` channel, except that messages whose method is in
+ * {@link BROADCAST_METHODS} are duplicated onto the `hi` channel as well.
+ */
+class ForkingMessageWriter implements MessageWriter {
+  readonly onError
+  readonly onClose
+
+  constructor(
+    private readonly loWriter: MessageWriter,
+    private readonly hiWriter: MessageWriter,
+  ) {
+    this.onError = loWriter.onError
+    this.onClose = loWriter.onClose
+  }
+
+  async write(msg: Message): Promise<void> {
+    const method = Message.isRequest(msg) || Message.isNotification(msg) ? msg.method : undefined
+    if (method !== undefined && BROADCAST_METHODS.has(method)) {
+      await Promise.all([this.loWriter.write(msg), this.hiWriter.write(msg)])
+      return
+    }
+    await this.loWriter.write(msg)
+  }
+
+  end(): void {
+    this.loWriter.end()
+    this.hiWriter.end()
+  }
+
+  dispose(): void {
+    this.loWriter.dispose()
+    this.hiWriter.dispose()
+  }
+}
+
+/**
  * Open the two physical sockets used by one logical LSP connection.
  *
  * Messages from both sockets are merged by the reader. Client-originated
- * messages intentionally use only the low-priority channel for now.
+ * messages use the low-priority channel, except for {@link BROADCAST_METHODS},
+ * which are sent on both channels.
  */
 export const createDualWebSocketTransport = async (
   baseUrl: string,
@@ -196,7 +238,10 @@ export const createDualWebSocketTransport = async (
     ],
     close,
   )
-  const writer = new WebSocketMessageWriter(loRpcSocket)
+  const writer = new ForkingMessageWriter(
+    new WebSocketMessageWriter(loRpcSocket),
+    new WebSocketMessageWriter(hiRpcSocket),
+  )
   const configurationMessage: NotificationMessage = {
     jsonrpc: '2.0',
     method: SET_SERVER_MESSAGE_PRIORITIZATION_METHOD,
